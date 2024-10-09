@@ -14,7 +14,18 @@ class APIFeatures {
     queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
     const filteredCondition = JSON.parse(queryStr);
 
-    let conditions = [filteredCondition];
+    let conditions = [];
+
+    Object.keys(filteredCondition).forEach((key) => {
+      if (typeof filteredCondition[key] === 'string') {
+        conditions.push({
+          [key]: { $regex: filteredCondition[key], $options: 'i' },
+        });
+      } else {
+        conditions.push({ [key]: filteredCondition[key] });
+      }
+    });
+
     // Search
     if (this.queryString.search) {
       const keyword = this.queryString.search;
@@ -26,15 +37,13 @@ class APIFeatures {
         ],
       };
       conditions.push(searchCondition);
-      // this.query = this.query.find({
-      //   ...filteredCondition,
-      //   ...searchCondition,
-      // });
+    }
+    if (conditions.length > 0) {
       this.query = this.query.find({
         $and: conditions,
       });
     } else {
-      this.query = this.query.find(filteredCondition);
+      this.query = this.query.find(); // Không có điều kiện lọc, lấy tất cả
     }
 
     return this;

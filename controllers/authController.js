@@ -6,6 +6,17 @@ const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const User = require('../models/userModel');
 
+const filteredUserField = (user) => {
+  const userObj = user.toObject() ? user.toObject() : { ...user };
+
+  delete userObj.__v;
+  delete userObj.passwordChangedAt;
+  delete userObj.role;
+  delete userObj.password;
+
+  return userObj;
+};
+
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN,
@@ -24,13 +35,13 @@ const createSendToken = (user, statusCode, res) => {
   res.cookie('jwt', token, cookieOptions);
 
   // Remove password from output
-  user.password = undefined;
+  const filteredUser = filteredUserField(user);
 
   res.status(statusCode).json({
     status: 'success',
     token,
     data: {
-      user,
+      user: filteredUser,
     },
   });
 };
@@ -239,6 +250,7 @@ exports.checkLogin = catchAsync(async (req, res, next) => {
 
   // Check if user exist
   const currentUser = await User.findById(decoded.id);
+  const filteredUser = filteredUserField(currentUser);
 
   if (!currentUser) {
     return next(
@@ -259,7 +271,7 @@ exports.checkLogin = catchAsync(async (req, res, next) => {
     status: 'success',
     token,
     data: {
-      user: currentUser,
+      user: filteredUser,
     },
   });
 });
@@ -271,10 +283,13 @@ exports.updateAvatar = catchAsync(async (req, res, next) => {
   const user = await User.findByIdAndUpdate(req.user.id, {
     avatar: req.body.avatar,
   });
+
+  const filteredUser = filteredUserField(user);
+
   res.status(200).json({
     status: 'success',
     data: {
-      user,
+      user: filteredUser,
     },
   });
 });
@@ -305,10 +320,12 @@ exports.updateUserInfo = catchAsync(async (req, res, next) => {
     return next(new AppError('No user found with that ID', 404));
   }
 
+  const filteredUser = filteredUserField(user);
+
   res.status(200).json({
     status: 'success',
     data: {
-      user,
+      user: filteredUser,
     },
   });
 });
