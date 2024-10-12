@@ -23,7 +23,7 @@ app.use(bodyParser.json());
 app.use((req, res, next) => {
   res.header(
     'Access-Control-Allow-Origin',
-    'https://grocery-market-react.vercel.app'
+    'https://my-coffee-shop-kv.vercel.app'
   ); // Replace with your frontend origin
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS'); // Allowed methods
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allowed headers
