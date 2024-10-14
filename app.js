@@ -3,6 +3,7 @@ const morgan = require('morgan');
 const app = express();
 const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 const AppError = require('./utils/appError');
 const productRouter = require('./routers/productRoutes');
 const userRouter = require('./routers/userRoutes');
@@ -18,15 +19,20 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-app.use(cors());
+app.use(
+  cors({
+    origin: 'http://localhost:3000',
+    credentials: true,
+  })
+);
 app.use(bodyParser.json());
+app.use(cookieParser());
+
 app.use((req, res, next) => {
-  res.header(
-    'Access-Control-Allow-Origin',
-    'https://my-coffee-shop-kv.vercel.app'
-  ); // Replace with your frontend origin
+  res.header('Access-Control-Allow-Origin', 'http://localhost:3000'); // Replace with your frontend origin
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS'); // Allowed methods
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allowed headers
+  res.header('Access-Control-Allow-Credentials', true);
   next();
 });
 app.use('/api/v1/products', productRouter);

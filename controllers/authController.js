@@ -22,29 +22,54 @@ const signToken = (id) => {
     expiresIn: process.env.JWT_EXPIRES_IN,
   });
 };
+const signRefreshToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN,
+  });
+};
 
-const createSendToken = (user, statusCode, res) => {
-  const token = signToken(user._id);
+const createSendToken = async (user, statusCode, res) => {
+  const accessToken = signToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
+
   const cookieOptions = {
     expires: new Date(
       Date.now() + process.env.JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000
     ),
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' ? true : false,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   };
-  if (process.env.NODE_ENV === 'production') cookieOptions.secure = true;
-  res.cookie('jwt', token, cookieOptions);
-
+  res.cookie('refreshToken', refreshToken, cookieOptions);
   // Remove password from output
   const filteredUser = filteredUserField(user);
-
   res.status(statusCode).json({
     status: 'success',
-    token,
+    token: accessToken,
     data: {
       user: filteredUser,
     },
   });
 };
+
+exports.refreshToken = catchAsync(async (req, res, next) => {
+  const refreshToken = req?.cookies?.refreshToken;
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'No refresh token provided' });
+  }
+  jwt.verify(refreshToken, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({
+        message: 'Invalid refresh token',
+      });
+    }
+    const newAccessToken = signToken(decoded.id);
+    res.status(200).json({
+      status: 'success',
+      token: newAccessToken,
+    });
+  });
+});
 
 exports.signup = catchAsync(async (req, res, next) => {
   try {
@@ -76,7 +101,6 @@ exports.signup = catchAsync(async (req, res, next) => {
 
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
-
   // 1) Check if email and password exist
   if (!email || !password) {
     return next(new AppError('Please provide email and password!', 400));
@@ -93,8 +117,18 @@ exports.login = catchAsync(async (req, res, next) => {
   createSendToken(user, 200, res);
 });
 
+exports.logout = (req, res) => {
+  res.cookie('refreshToken', '', {
+    expires: new Date(0),
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // Chỉ bật secure trong production
+    sameSite: 'Lax',
+  });
+  res.status(200).json({ status: 'success', message: 'Logged out!' });
+};
+
 exports.protectRoute = catchAsync(async (req, res, next) => {
-  // Getting token from request
+  // Getting token from request headers
   let token;
   if (
     req.headers.authorization &&
@@ -103,32 +137,38 @@ exports.protectRoute = catchAsync(async (req, res, next) => {
     token = req.headers.authorization.split(' ')[1];
   }
   if (!token) {
-    return next(
-      new AppError('You are not logged in! Please log in to get access.', 401)
-    );
+    return res
+      .status(401)
+      .json({ message: 'You are not logged in! Please log in to get access.' });
   }
+
   // Verification token
-  const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+  let decoded;
+  try {
+    decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+  } catch (err) {
+    // Token expired or invalid
+    return res
+      .status(401)
+      .json({ message: 'Invalid or expired token, please log in again.' });
+  }
 
-  // Check if user exist
+  // Check if user still exists
   const currentUser = await User.findById(decoded.id);
-
   if (!currentUser) {
-    return next(
-      new AppError(
-        'The user belonging to this token does no longer exist.',
-        401
-      )
-    );
-  }
-  // 4) Check if user changed password after the token was issued
-  if (currentUser.changedPasswordAfter(decoded.iat)) {
-    return next(
-      new AppError('User recently changed password! Please log in again.', 401)
-    );
+    return res.status(401).json({
+      message: 'The user belonging to this token does no longer exist.',
+    });
   }
 
-  // GRANT ACCESS TO PROTECTED ROUTE
+  // Check if user changed password after the token was issued
+  if (currentUser.changedPasswordAfter(decoded.iat)) {
+    return res.status(401).json({
+      message: 'User recently changed password! Please log in again.',
+    });
+  }
+
+  // Grant access to the protected route
   req.user = currentUser;
   next();
 });
